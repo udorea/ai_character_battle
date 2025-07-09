@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const billboardTextSpan = document.getElementById('billboard-text');
     const PHP_API_BASE_URL = "http://localhost/CHARACTER/backend";
-    // FLASK_API_BASE_URL을 현재 페이지의 Origin으로 설정하여 동적으로 IP 주소를 가져옵니다.
     const FLASK_API_BASE_URL = window.location.origin; 
 
     async function updateBillboard() {
@@ -74,7 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
             analyzeButton.disabled = true;
 
             try {
-                // Flask API 호출 시 상대 경로 사용 (FLASK_API_BASE_URL이 window.location.origin이므로)
                 const response = await fetch('/analyze_character', { 
                     method: 'POST',
                     headers: {
@@ -147,7 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rankingListDiv && latestBattleSummaryDiv) {
         async function loadRankingData() {
             try {
-                // Flask API 호출 시 FLASK_API_BASE_URL 사용
                 const rankingResponse = await fetch(`${FLASK_API_BASE_URL}/api/ranking`);
                 if (!rankingResponse.ok) {
                     const errorBody = await rankingResponse.text();
@@ -263,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 characterBattleHistoryDiv.style.display = 'block';
                 
                 try {
-                    // Flask API 호출 시 FLASK_API_BASE_URL 사용
                     const response = await fetch(`${PHP_API_BASE_URL}/get_character_battles.php?id=${characterId}`);
                     if (!response.ok) {
                         const errorBody = await response.text();
