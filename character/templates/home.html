@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 캐릭터 배틀</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}" />
+</head>
+<body>
+  <div class="hero">
+    <div class="overlay">
+      <h1 class="title">🔥 AI BATTLE 🔥</h1>
+      <p class="subtitle">캐릭터를 창조하고 AI가 판단하는 치열한 1:1 전투를 즐기세요</p>
+      <a href="{{ url_for('character_creator') }}" class="start-button">지금 시작하기</a>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>ⓒ 2025 AI BATTLE. SOFTWARE SOLUTION.</p>
+  </footer>
+</body>
+</html>
