@@ -8,15 +8,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiCharacterDescription = document.getElementById('aiCharacterDescription');
 
     const billboardTextSpan = document.getElementById('billboard-text');
-    const PHP_API_BASE_URL = "http://localhost/CHARACTER/backend";
-    const FLASK_API_BASE_URL = window.location.origin; 
+    const FLASK_API_BASE_URL = window.location.origin;
 
     async function updateBillboard() {
         try {
-            const response = await fetch(`${PHP_API_BASE_URL}/get_latest_battle_log.php`);
+            const response = await fetch(`${FLASK_API_BASE_URL}/api/latest_battle_log`);
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error(`전광판 PHP API HTTP 오류 (${response.status}):`, errorText);
+                console.error(`전광판 API HTTP 오류 (${response.status}):`, errorText);
                 billboardTextSpan.textContent = "배틀 소식 로드 오류: 서버 응답 문제";
                 billboardTextSpan.style.animation = 'none';
                 return;
@@ -33,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (latestBattle && latestBattle.winner_name && latestBattle.loser_name && latestBattle.battle_reason) {
-                let message = `${latestBattle.winner_name} (이)가 ${latestBattle.loser_name}으로부터 승리했습니다!`;
+                let message = `${latestBattle.winner_name} (이)가 ${latestBattle.loser_name}(으)로부터 승리했습니다!`;
                 if (latestBattle.battle_reason.includes('고전 끝에') || latestBattle.battle_reason.includes('치열한 접전 끝에')) {
                     message = `${latestBattle.winner_name} (이)가 ${latestBattle.loser_name} (을)를 고전 끝에 승리했습니다!`;
                 } else if (latestBattle.battle_reason.includes('압도적인') || latestBattle.battle_reason.includes('손쉽게')) {
@@ -148,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rankingResponse = await fetch(`${FLASK_API_BASE_URL}/api/ranking`);
                 if (!rankingResponse.ok) {
                     const errorBody = await rankingResponse.text();
-                    console.error(`랭킹 Flask API HTTP 오류 (${rankingResponse.status}):`, errorBody);
+                    console.error(`랭킹 API HTTP 오류 (${rankingResponse.status}):`, errorBody);
                     rankingListDiv.innerHTML = '<p class="loading-message" style="color: red;">랭킹 데이터를 불러오는 데 실패했습니다 (서버 응답 문제)</p>';
                     latestBattleSummaryDiv.innerHTML = '<p style="color: red;">배틀 요약을 불러오는 데 실패했습니다.</p>';
                     return; 
@@ -208,11 +207,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                     rankingListDiv.innerHTML = tableHtml;
                 }
-
-                const battleLogResponse = await fetch(`${PHP_API_BASE_URL}/get_latest_battle_log.php`);
+                const battleLogResponse = await fetch(`${FLASK_API_BASE_URL}/api/latest_battle_log`);
                 if (!battleLogResponse.ok) {
                     const errorBody = await battleLogResponse.text();
-                    console.error(`최신 배틀 PHP API HTTP 오류 (${battleLogResponse.status}):`, errorBody);
+                    console.error(`최신 배틀 API HTTP 오류 (${response.status}):`, errorBody);
                     latestBattleSummaryDiv.innerHTML = '<p style="color: red;">최근 배틀 정보 로드 오류: 서버 응답 문제</p>';
                     return; 
                 }
@@ -228,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (latestBattle && latestBattle.winner_name && latestBattle.loser_name && latestBattle.battle_reason) {
                     latestBattleSummaryDiv.innerHTML = `
-                        <p><strong>최근 배틀:</strong> ${latestBattle.winner_name} (이)가 ${latestBattle.loser_name}으로부터 승리했습니다!</p>
+                        <p><strong>최근 배틀:</strong> ${latestBattle.winner_name} (이)가 ${latestBattle.loser_name}(으)로 승리했습니다!</p>
                         <p><strong>승리 이유:</strong> ${latestBattle.battle_reason}</p>
                     `;
                 } else {
@@ -260,10 +258,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 characterBattleHistoryDiv.style.display = 'block';
                 
                 try {
-                    const response = await fetch(`${PHP_API_BASE_URL}/get_character_battles.php?id=${characterId}`);
+                    const response = await fetch(`${FLASK_API_BASE_URL}/api/character_battles/${characterId}`);
                     if (!response.ok) {
                         const errorBody = await response.text();
-                        console.error(`캐릭터 전적 PHP API HTTP 오류 (${response.status}):`, errorBody);
+                        console.error(`캐릭터 전적 API HTTP 오류 (${response.status}):`, errorBody);
                         historyContent.innerHTML = '<p style="color: red;">전적을 불러오는 데 실패했습니다. (서버 응답 문제)</p>';
                         return;
                     }
@@ -283,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const battleDate = new Date(battle.timestamp).toLocaleString();
                             let resultText = '';
                             if (battle.winner_name === characterName) {
-                                resultText = `<span style="color: #76FF03;">승리!</span> ${battle.loser_name}으로부터 승리했습니다.`;
+                                resultText = `<span style="color: #76FF03;">승리!</span> ${battle.loser_name}(으)로부터 승리했습니다.`;
                             } else if (battle.loser_name === characterName) {
                                 resultText = `<span style="color: #FF4D4D;">패배...</span> ${battle.winner_name} (에게) 패배했습니다.`;
                             } else {
