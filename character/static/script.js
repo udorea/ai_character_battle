@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <td class="clickable-character-name" data-character-id="${char.id}" data-character-name="${char.name}">${char.name}</td>
                                 <td>${char.wins}</td>
                                 <td>${char.losses}</td>
-                                <td>${char.win_rate}</td>
+                                <td>${char.win_rate}%</td>
                                 <td>${char.total_battles}</td>
                             </tr>
                         `;
@@ -207,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                     rankingListDiv.innerHTML = tableHtml;
                 }
+
                 const battleLogResponse = await fetch(`${FLASK_API_BASE_URL}/api/latest_battle_log`);
                 if (!battleLogResponse.ok) {
                     const errorBody = await battleLogResponse.text();
@@ -226,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (latestBattle && latestBattle.winner_name && latestBattle.loser_name && latestBattle.battle_reason) {
                     latestBattleSummaryDiv.innerHTML = `
-                        <p><strong>최근 배틀:</strong> ${latestBattle.winner_name} (이)가 ${latestBattle.loser_name}(으)로 승리했습니다!</p>
+                        <p><strong>최근 배틀:</strong> ${latestBattle.winner_name} (이)가 ${latestBattle.loser_name}(으)로부터 승리했습니다!</p>
                         <p><strong>승리 이유:</strong> ${latestBattle.battle_reason}</p>
                     `;
                 } else {
@@ -281,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const battleDate = new Date(battle.timestamp).toLocaleString();
                             let resultText = '';
                             if (battle.winner_name === characterName) {
-                                resultText = `<span style="color: #76FF03;">승리!</span> ${battle.loser_name}(으)로부터 승리했습니다.`;
+                                resultText = `<span style="color: #76FF03;">승리!</span> ${battle.loser_name} (을)를 물리쳤습니다.`;
                             } else if (battle.loser_name === characterName) {
                                 resultText = `<span style="color: #FF4D4D;">패배...</span> ${battle.winner_name} (에게) 패배했습니다.`;
                             } else {
