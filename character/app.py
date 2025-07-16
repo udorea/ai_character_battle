@@ -10,7 +10,7 @@ import random
 import atexit
 import pymysql
 import time
-import re
+import re 
 
 load_dotenv()
 
@@ -42,7 +42,7 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-FORBIDDEN_WORDS = ["반드시","절대","무조건","불사","어머니","애미","아버지","아빠","엄마","본경","석열","노무현","재명","부엉이","노알라","게이","이긴","이김","이겨","지지","패배", "승리", "무한", "계속", "다솔", "인지", "정연", "선아", "운지", "북딱", "일베", "디씨", "자지", "고추", "꼬추", "섹스", "ㅅㅅ", ]
+FORBIDDEN_WORDS = ["절대","무조건","불사","어머니","애미","아버지","아빠","엄마","본경","석열","노무현","재명","부엉이","노알라","게이","이긴","이김","이겨","지지","패배", "승리", "무한", "계속", "다솔", "인지", "정연", "선아", "운지", "북딱", "일베", "디씨", "자지", "고추", "꼬추", "섹스", "ㅅㅅ", ]
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_USER = os.getenv("DB_USER", "root")
@@ -110,7 +110,10 @@ def get_ai_battle_response(character1_name, character1_desc, character2_name, ch
         prompt_text = f"""
         당신은 두 캐릭터 간의 가상 배틀을 시뮬레이션하고 결과를 예측하는 AI입니다.
         두 캐릭터의 정보를 바탕으로 승패를 결정하고, 그 이유를 상세히 설명해주세요.
-        응답은 반드시 아래 지정된 형식(키-값 쌍)으로 작성해야 합니다.
+        
+        **매우 중요:** 응답은 반드시 아래 지정된 형식(키-값 쌍)으로 작성해야 하며,
+        **'승자' 및 '패자' 필드의 값은 배틀 참가자({character1_name}, {character2_name}) 중 하나의 이름과 한 글자도 틀리지 않고 정확히 일치해야 합니다.**
+        특히, 이름에 괄호 '()'가 포함되어 있다면 괄호 안의 내용까지 원본 그대로 유지해야 합니다.
         추가 설명이나 인사말 없이 순수하게 키-값 쌍만 출력하세요.
 
         ---
@@ -122,13 +125,13 @@ def get_ai_battle_response(character1_name, character1_desc, character2_name, ch
         ---
 
         출력 형식:
-        승자: [승자 캐릭터의 정확한 전체 이름 (괄호 안의 정보 포함)]
-        패자: [패자 캐릭터의 정확한 전체 이름 (괄호 안의 정보 포함)]
+        승자: [승자 캐릭터의 정확한 전체 이름 (예: {character1_name} 또는 {character2_name})]
+        패자: [패자 캐릭터의 정확한 전체 이름 (예: {character1_name} 또는 {character2_name})]
         판단_근거: [승패에 대한 상세한 이유]
         예시:
-        승자: 김독자
-        패자: 논개(30611)
-        판단_근거: 김독자는 논개(30611)의 능력을 무력화할 수 있습니다.
+        승자: {character1_name}
+        패자: {character2_name}
+        판단_근거: [승패에 대한 상세한 이유]
         """
 
         response = model.generate_content(prompt_text, safety_settings=SAFETY_SETTINGS)
@@ -183,6 +186,16 @@ def get_ai_battle_response(character1_name, character1_desc, character2_name, ch
 global scheduler
 scheduler = None
 
+def get_base_name(full_name):
+    """
+    '이름(숫자)' 형식에서 '숫자)' 부분을 제거하고 기본 이름만 반환합니다.
+    괄호가 없으면 전체 이름을 반환합니다.
+    """
+    match = re.match(r'(.+)\(\d+\)$', full_name)
+    if match:
+        return match.group(1).strip()
+    return full_name.strip()
+
 def perform_random_battle():
     """정기적으로 무작위 캐릭터 두 명을 선택하여 배틀을 수행합니다."""
     print("\n--- 0.5분마다 자동 배틀 시작 ---")
@@ -193,10 +206,8 @@ def perform_random_battle():
         if not characters_data or len(characters_data) < 2:
             print("캐릭터가 2명 미만이므로 자동 배틀을 건너낍니다.")
             return
-
         characters_data.sort(key=lambda x: x['total_battles'])
         num_candidates = max(2, min(len(characters_data), len(characters_data) // 2 + 1)) 
-        
         eligible_characters = characters_data[:num_candidates]
 
         for i in range(2):
@@ -228,32 +239,72 @@ def perform_random_battle():
 
             if winner_name_from_ai == char1['name']:
                 winner_char_id = char1['id']
+                print(f"DEBUG: Winner matched exactly: {char1['name']}")
             elif winner_name_from_ai == char2['name']:
                 winner_char_id = char2['id']
+                print(f"DEBUG: Winner matched exactly: {char2['name']}")
 
             if loser_name_from_ai == char1['name']:
                 loser_char_id = char1['id']
+                print(f"DEBUG: Loser matched exactly: {char1['name']}")
             elif loser_name_from_ai == char2['name']:
                 loser_char_id = char2['id']
+                print(f"DEBUG: Loser matched exactly: {char2['name']}")
 
-            if winner_char_id is None and len(winner_name_from_ai) > 0:
-                if char1['name'].startswith(winner_name_from_ai):
-                    winner_char_id = char1['id']
-                elif char2['name'].startswith(winner_name_from_ai):
-                    winner_char_id = char2['id']
-            
-            if loser_char_id is None and len(loser_name_from_ai) > 0:
-                if char1['name'].startswith(loser_name_from_ai):
-                    loser_char_id = char1['id']
-                elif char2['name'].startswith(loser_name_from_ai):
-                    loser_char_id = char2['id']
+            if winner_char_id is None or loser_char_id is None:
+                print("DEBUG: Exact name match failed. Attempting flexible matching...")
+                
+                char1_base_name = get_base_name(char1['name'])
+                char2_base_name = get_base_name(char2['name'])
+                ai_winner_base_name = get_base_name(winner_name_from_ai)
+                ai_loser_base_name = get_base_name(loser_name_from_ai)
+
+                print(f"DEBUG: Base names - Char1: '{char1_base_name}', Char2: '{char2_base_name}'")
+                print(f"DEBUG: AI Base names - Winner: '{ai_winner_base_name}', Loser: '{ai_loser_base_name}'")
+
+                if winner_char_id is None:
+                    if char1_base_name == ai_winner_base_name:
+                        winner_char_id = char1['id']
+                        print(f"DEBUG: Winner matched by base name: {char1_base_name}")
+                    elif char2_base_name == ai_winner_base_name:
+                        winner_char_id = char2['id']
+                        print(f"DEBUG: Winner matched by base name: {char2_base_name}")
+                
+                if loser_char_id is None:
+                    if char1_base_name == ai_loser_base_name:
+                        loser_char_id = char1['id']
+                        print(f"DEBUG: Loser matched by base name: {char1_base_name}")
+                    elif char2_base_name == ai_loser_base_name:
+                        loser_char_id = char2['id']
+                        print(f"DEBUG: Loser matched by base name: {char2_base_name}")
+
+                if winner_char_id is None and len(ai_winner_base_name) > 0:
+                    if ai_winner_base_name in char1_base_name:
+                        winner_char_id = char1['id']
+                        print(f"DEBUG: Winner matched by 'in' operator (char1): {ai_winner_base_name} in {char1_base_name}")
+                    elif ai_winner_base_name in char2_base_name:
+                        winner_char_id = char2['id']
+                        print(f"DEBUG: Winner matched by 'in' operator (char2): {ai_winner_base_name} in {char2_base_name}")
+                
+                if loser_char_id is None and len(ai_loser_base_name) > 0:
+                    if ai_loser_base_name in char1_base_name:
+                        loser_char_id = char1['id']
+                        print(f"DEBUG: Loser matched by 'in' operator (char1): {ai_loser_base_name} in {char1_base_name}")
+                    elif ai_loser_base_name in char2_base_name:
+                        loser_char_id = char2['id']
+                        print(f"DEBUG: Loser matched by 'in' operator (char2): {ai_loser_base_name} in {char2_base_name}")
+
+                if winner_char_id is None or loser_char_id is None:
+                    print("DEBUG: Flexible matching failed to find both winner and loser.")
+
 
             if winner_char_id is None or loser_char_id is None:
                 print(f"경고: AI 응답의 승자/패자 이름이 참가 캐릭터와 일치하지 않습니다. (ID 불일치)")
                 print(f"AI 응답: 승자='{winner_name_from_ai}', 패자='{loser_name_from_ai}'")
                 print(f"참가 캐릭터 (원본): '{char1['name']}', '{char2['name']}'")
                 print(f"참가 캐릭터 (AI 전달용): '{char1_name_for_ai}', '{char2_name_for_ai}'")
-                continue 
+                print(f"매핑 시도 후: winner_id={winner_char_id}, loser_id={loser_char_id}")
+                continue
 
             try:
                 execute_query("UPDATE characters SET wins = wins + 1 WHERE id = %s", (winner_char_id,))
@@ -263,7 +314,7 @@ def perform_random_battle():
 
             except Exception as e:
                 print(f"자동 배틀 ({i+1}/2): 승패 기록 업데이트 중 오류 발생: {e}")
-                continue 
+                continue
 
             try:
                 execute_query(
@@ -283,7 +334,7 @@ def perform_random_battle():
 
 def initialize_scheduler():
     global scheduler
-    
+
     if scheduler is not None:
         try:
             if scheduler.running:
@@ -296,7 +347,6 @@ def initialize_scheduler():
     scheduler.add_job(perform_random_battle, 'interval', minutes=0.5, id='random_battle_job', replace_existing=True)
     scheduler.start()
     print("AI 스케줄러가 새로 초기화되고 시작되었습니다.")
-
     atexit.register(lambda: scheduler.shutdown())
 
 @app.route('/')
@@ -378,6 +428,7 @@ def get_characters_flask():
         print(f"캐릭터 목록/조회 중 오류 발생: {e}")
         return jsonify({"error": f"캐릭터 데이터를 불러오는 데 실패했습니다: {e}"}), 500
 
+
 @app.route('/api/update_character_stats', methods=['POST'])
 def update_character_stats_flask():
     data = request.get_json()
@@ -397,6 +448,7 @@ def update_character_stats_flask():
     except Exception as e:
         print(f"캐릭터 스탯 업데이트 중 오류 발생: {e}")
         return jsonify({"success": False, "message": f"서버 오류: {e}"}), 500
+
 
 @app.route('/api/log_battle', methods=['POST'])
 def log_battle_flask():
@@ -472,6 +524,7 @@ def get_character_battles_flask(character_id):
 def manager_page():
     return render_template('manager.html')
 
+
 @app.route('/api/admin/stop_scheduler', methods=['POST'])
 def stop_scheduler():
     global scheduler
@@ -491,7 +544,7 @@ def start_scheduler():
     global scheduler
     try:
         if not (scheduler and scheduler.running):
-            initialize_scheduler() 
+            initialize_scheduler()
             return jsonify({"success": True, "message": "AI 스케줄러가 시작되었습니다."}), 200
         else:
             return jsonify({"success": False, "message": "AI 스케줄러가 이미 실행 중입니다."}), 200
@@ -518,11 +571,13 @@ def delete_character():
         return jsonify({"success": False, "message": "삭제할 캐릭터 ID가 필요합니다."}), 400
 
     try:
+
         delete_logs_query = """
             DELETE FROM battle_logs
             WHERE character1_id = %s OR character2_id = %s OR winner_id = %s OR loser_id = %s
         """
         execute_query(delete_logs_query, (character_id, character_id, character_id, character_id))
+
 
         delete_char_query = "DELETE FROM characters WHERE id = %s"
         rows_affected = execute_query(delete_char_query, (character_id,))
@@ -547,7 +602,7 @@ def analyze_character():
     if not character_name or not character_description:
         return jsonify({"error": "캐릭터 이름과 설명을 모두 제공해야 합니다."}), 400
 
-    name_pattern = re.compile(r'.+\(\d+\)$') 
+    name_pattern = re.compile(r'.+\(\d+\)$')
     if not name_pattern.fullmatch(character_name):
         return jsonify({"error": "캐릭터 이름은 '이름(학번)' 형식이어야 합니다. (예: 홍길동(12345))"}), 400
 
