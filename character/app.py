@@ -1,14 +1,16 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
-import requests 
+import requests
 from google.api_core import exceptions
-from apscheduler.schedulers.background import BackgroundScheduler 
-import random 
-import atexit 
+from apscheduler.schedulers.background import BackgroundScheduler
+import random
+import atexit
 import pymysql
+import time
+import re
 
 load_dotenv()
 
@@ -40,14 +42,15 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-FORBIDDEN_WORDS = ["금칙어 적는 곳 입니다"]
+FORBIDDEN_WORDS = ["반드시","절대","무조건","불사","어머니","애미","아버지","아빠","엄마","본경","석열","노무현","재명","부엉이","노알라","게이","이긴","이김","이겨","지지","패배", "승리", "무한", "계속", "다솔", "인지", "정연", "선아", "운지", "북딱", "일베", "디씨", "자지", "고추", "꼬추", "섹스", "ㅅㅅ", ]
 
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASS = os.getenv("DB_PASS", "") 
-DB_NAME = os.getenv("DB_NAME", "") #your_character_db로 해도 됨
+DB_PASS = os.getenv("DB_PASS", "")
+DB_NAME = os.getenv("DB_NAME", "your_character_db")
 
 def get_db_connection():
+    """데이터베이스 연결 객체를 반환합니다."""
     try:
         conn = pymysql.connect(
             host=DB_HOST,
@@ -63,6 +66,14 @@ def get_db_connection():
         raise
 
 def execute_query(query, params=None, fetch_one=False, fetch_all=False):
+    """
+    SQL 쿼리를 실행하고 결과를 반환합니다.
+    :param query: 실행할 SQL 쿼리 문자열
+    :param params: 쿼리에 바인딩할 파라미터 튜플 또는 리스트
+    :param fetch_one: 하나의 결과만 가져올지 여부
+    :param fetch_all: 모든 결과를 가져올지 여부
+    :return: 쿼리 결과 (딕셔너리 또는 딕셔너리 리스트)
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -85,6 +96,7 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False):
             conn.close()
 
 def check_profanity(text, forbidden_words):
+    """텍스트에 금칙어가 포함되어 있는지 확인합니다."""
     found_words = []
     text_lower = text.lower()
     for word in forbidden_words:
@@ -93,6 +105,7 @@ def check_profanity(text, forbidden_words):
     return found_words
 
 def get_ai_battle_response(character1_name, character1_desc, character2_name, character2_desc):
+    """Gemini AI를 사용하여 두 캐릭터 간의 배틀 결과를 예측합니다."""
     try:
         prompt_text = f"""
         당신은 두 캐릭터 간의 가상 배틀을 시뮬레이션하고 결과를 예측하는 AI입니다.
@@ -109,9 +122,13 @@ def get_ai_battle_response(character1_name, character1_desc, character2_name, ch
         ---
 
         출력 형식:
-        승자: [승자 캐릭터 이름]
-        패자: [패자 캐릭터 이름]
+        승자: [승자 캐릭터의 정확한 전체 이름 (괄호 안의 정보 포함)]
+        패자: [패자 캐릭터의 정확한 전체 이름 (괄호 안의 정보 포함)]
         판단_근거: [승패에 대한 상세한 이유]
+        예시:
+        승자: 김독자
+        패자: 논개(30611)
+        판단_근거: 김독자는 논개(30611)의 능력을 무력화할 수 있습니다.
         """
 
         response = model.generate_content(prompt_text, safety_settings=SAFETY_SETTINGS)
@@ -163,79 +180,124 @@ def get_ai_battle_response(character1_name, character1_desc, character2_name, ch
         print(f"AI 배틀 결과 처리 중 예상치 못한 오류 발생: {e}")
         return {"error": f"AI 배틀 분석 중 예상치 못한 내부 오류가 발생했습니다: {e}"}
 
-scheduler = BackgroundScheduler()
+global scheduler
+scheduler = None
 
 def perform_random_battle():
-    print("\n--- 1분마다 자동 배틀 시작 ---")
+    """정기적으로 무작위 캐릭터 두 명을 선택하여 배틀을 수행합니다."""
+    print("\n--- 0.5분마다 자동 배틀 시작 ---")
 
     try:
-        characters_data = execute_query("SELECT id, name, description FROM characters", fetch_all=True)
+        characters_data = execute_query("SELECT id, name, description, (wins + losses) AS total_battles FROM characters", fetch_all=True)
         
         if not characters_data or len(characters_data) < 2:
-            print("캐릭터가 2명 미만이므로 자동 배틀을 건너킵니다.")
+            print("캐릭터가 2명 미만이므로 자동 배틀을 건너낍니다.")
             return
 
-        characters = [
-            type('Character', (object,), char_dict) for char_dict in characters_data
-        ]
+        characters_data.sort(key=lambda x: x['total_battles'])
+        num_candidates = max(2, min(len(characters_data), len(characters_data) // 2 + 1)) 
         
+        eligible_characters = characters_data[:num_candidates]
+
+        for i in range(2):
+            if len(eligible_characters) < 2:
+                print(f"충분한 캐릭터가 없어 {i+1}번째 배틀을 건너뜁니다.")
+                break
+
+            char1, char2 = random.sample(eligible_characters, 2)
+            char1_name_for_ai = char1['name']
+            char2_name_for_ai = char2['name']
+
+            print(f"자동 배틀 ({i+1}/2): {char1['name']} vs {char2['name']}")
+
+            battle_results = get_ai_battle_response(
+                char1_name_for_ai, char1['description'],
+                char2_name_for_ai, char2['description']
+            )
+
+            if "error" in battle_results:
+                print(f"자동 배틀 ({i+1}/2) 실패: {battle_results['error']}")
+                continue 
+
+            winner_name_from_ai = battle_results['winner']
+            loser_name_from_ai = battle_results['loser']
+            reason = battle_results['reason']
+
+            winner_char_id = None
+            loser_char_id = None
+
+            if winner_name_from_ai == char1['name']:
+                winner_char_id = char1['id']
+            elif winner_name_from_ai == char2['name']:
+                winner_char_id = char2['id']
+
+            if loser_name_from_ai == char1['name']:
+                loser_char_id = char1['id']
+            elif loser_name_from_ai == char2['name']:
+                loser_char_id = char2['id']
+
+            if winner_char_id is None and len(winner_name_from_ai) > 0:
+                if char1['name'].startswith(winner_name_from_ai):
+                    winner_char_id = char1['id']
+                elif char2['name'].startswith(winner_name_from_ai):
+                    winner_char_id = char2['id']
+            
+            if loser_char_id is None and len(loser_name_from_ai) > 0:
+                if char1['name'].startswith(loser_name_from_ai):
+                    loser_char_id = char1['id']
+                elif char2['name'].startswith(loser_name_from_ai):
+                    loser_char_id = char2['id']
+
+            if winner_char_id is None or loser_char_id is None:
+                print(f"경고: AI 응답의 승자/패자 이름이 참가 캐릭터와 일치하지 않습니다. (ID 불일치)")
+                print(f"AI 응답: 승자='{winner_name_from_ai}', 패자='{loser_name_from_ai}'")
+                print(f"참가 캐릭터 (원본): '{char1['name']}', '{char2['name']}'")
+                print(f"참가 캐릭터 (AI 전달용): '{char1_name_for_ai}', '{char2_name_for_ai}'")
+                continue 
+
+            try:
+                execute_query("UPDATE characters SET wins = wins + 1 WHERE id = %s", (winner_char_id,))
+                execute_query("UPDATE characters SET losses = losses + 1 WHERE id = %s", (loser_char_id,))
+                
+                print(f"자동 배틀 ({i+1}/2) 완료: {winner_name_from_ai} 승리! ({reason})")
+
+            except Exception as e:
+                print(f"자동 배틀 ({i+1}/2): 승패 기록 업데이트 중 오류 발생: {e}")
+                continue 
+
+            try:
+                execute_query(
+                    "INSERT INTO battle_logs (character1_id, character2_id, winner_id, loser_id, battle_reason) VALUES (%s, %s, %s, %s, %s)",
+                    (char1['id'], char2['id'], winner_char_id, loser_char_id, reason)
+                )
+            except Exception as e:
+                print(f"자동 배틀 ({i+1}/2): 배틀 로그 저장 중 오류 발생: {e}")
+                continue
+
+            if i == 0:
+                time.sleep(1)
+
     except Exception as e:
-        print(f"자동 배틀: 캐릭터 목록을 가져오는 중 오류 발생: {e}")
+        print(f"자동 배틀 전체 실행 중 오류 발생: {e}")
         return
 
-    char1, char2 = random.sample(characters, 2)
+def initialize_scheduler():
+    global scheduler
     
-    print(f"자동 배틀: {char1.name} vs {char2.name}")
+    if scheduler is not None:
+        try:
+            if scheduler.running:
+                scheduler.shutdown(wait=False)
+            print("Existing scheduler instance shutdown for re-initialization.")
+        except Exception as e:
+            print(f"Error during existing scheduler shutdown: {e}")
 
-    battle_results = get_ai_battle_response(
-        char1.name, char1.description,
-        char2.name, char2.description
-    )
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(perform_random_battle, 'interval', minutes=0.5, id='random_battle_job', replace_existing=True)
+    scheduler.start()
+    print("AI 스케줄러가 새로 초기화되고 시작되었습니다.")
 
-    if "error" in battle_results:
-        print(f"자동 배틀 실패: {battle_results['error']}")
-        return
-
-    winner_name = battle_results['winner']
-    loser_name = battle_results['loser']
-    reason = battle_results['reason']
-
-    winner_char_id = None
-    loser_char_id = None
-
-    for char_data in characters_data:
-        if char_data['name'] == winner_name:
-            winner_char_id = char_data['id']
-        if char_data['name'] == loser_name:
-            loser_char_id = char_data['id']
-    
-    if winner_char_id is None or loser_char_id is None:
-        print(f"경고: AI 응답의 승자/패자 이름이 참가 캐릭터와 일치하지 않습니다. (ID 불일치)")
-        print(f"AI 응답: 승자='{winner_name}', 패자='{loser_name}'")
-        print(f"참가 캐릭터: '{char1.name}', '{char2.name}'")
-        return
-
-
-    try:
-        execute_query("UPDATE characters SET wins = wins + 1 WHERE id = %s", (winner_char_id,))
-        execute_query("UPDATE characters SET losses = losses + 1 WHERE id = %s", (loser_char_id,))
-        
-        print(f"자동 배틀 완료: {winner_name} 승리! ({reason})")
-
-    except Exception as e:
-        print(f"자동 배틀: 승패 기록 업데이트 중 오류 발생: {e}")
-        return
-
-    try:
-        execute_query(
-            "INSERT INTO battle_logs (character1_id, character2_id, winner_id, loser_id, battle_reason) VALUES (%s, %s, %s, %s, %s)",
-            (char1.id, char2.id, winner_char_id, loser_char_id, reason)
-        )
-    except Exception as e:
-        print(f"자동 배틀: 배틀 로그 저장 중 오류 발생: {e}")
-        return
-
-scheduler.add_job(perform_random_battle, 'interval', minutes= 1)
+    atexit.register(lambda: scheduler.shutdown())
 
 @app.route('/')
 def home():
@@ -265,7 +327,7 @@ def get_ranking():
                 (wins + losses) AS total_battles,
                 ROUND(IFNULL((wins / (wins + losses)) * 100, 0), 2) AS win_rate
             FROM characters
-            ORDER BY wins DESC, total_battles DESC, name ASC
+            ORDER BY win_rate DESC, wins DESC, total_battles DESC, name ASC
         """, fetch_all=True)
 
         if ranking_data:
@@ -406,6 +468,74 @@ def get_character_battles_flask(character_id):
         print(f"캐릭터 전적 가져오는 중 오류 발생: {e}")
         return jsonify({"error": f"서버 오류: {e}"}), 500
 
+@app.route('/manager')
+def manager_page():
+    return render_template('manager.html')
+
+@app.route('/api/admin/stop_scheduler', methods=['POST'])
+def stop_scheduler():
+    global scheduler
+    try:
+        if scheduler and scheduler.running:
+            scheduler.shutdown(wait=False)
+            print("AI 스케줄러가 중단되었습니다.")
+            return jsonify({"success": True, "message": "AI 스케줄러가 중단되었습니다."}), 200
+        else:
+            return jsonify({"success": False, "message": "AI 스케줄러가 이미 중단된 상태입니다."}), 200
+    except Exception as e:
+        print(f"스케줄러 중단 중 오류 발생: {e}")
+        return jsonify({"success": False, "message": f"스케줄러 중단 실패: {e}"}), 500
+
+@app.route('/api/admin/start_scheduler', methods=['POST'])
+def start_scheduler():
+    global scheduler
+    try:
+        if not (scheduler and scheduler.running):
+            initialize_scheduler() 
+            return jsonify({"success": True, "message": "AI 스케줄러가 시작되었습니다."}), 200
+        else:
+            return jsonify({"success": False, "message": "AI 스케줄러가 이미 실행 중입니다."}), 200
+    except Exception as e:
+        print(f"스케줄러 시작 중 오류 발생: {e}")
+        return jsonify({"success": False, "message": f"스케줄러 시작 실패: {e}"}), 500
+
+@app.route('/api/admin/scheduler_status', methods=['GET'])
+def get_scheduler_status():
+    global scheduler
+    try:
+        status = "running" if (scheduler and scheduler.running) else "stopped"
+        return jsonify({"status": status, "message": f"AI 스케줄러가 현재 {status} 상태입니다."}), 200
+    except Exception as e:
+        print(f"스케줄러 상태 확인 중 오류 발생: {e}")
+        return jsonify({"status": "unknown", "message": f"스케줄러 상태 확인 실패: {e}"}), 500
+
+@app.route('/api/admin/delete_character', methods=['POST'])
+def delete_character():
+    data = request.get_json()
+    character_id = data.get('id')
+
+    if not character_id:
+        return jsonify({"success": False, "message": "삭제할 캐릭터 ID가 필요합니다."}), 400
+
+    try:
+        delete_logs_query = """
+            DELETE FROM battle_logs
+            WHERE character1_id = %s OR character2_id = %s OR winner_id = %s OR loser_id = %s
+        """
+        execute_query(delete_logs_query, (character_id, character_id, character_id, character_id))
+
+        delete_char_query = "DELETE FROM characters WHERE id = %s"
+        rows_affected = execute_query(delete_char_query, (character_id,))
+
+        if rows_affected > 0:
+            print(f"캐릭터 ID {character_id} 및 관련 전적이 성공적으로 삭제되었습니다.")
+            return jsonify({"success": True, "message": f"캐릭터 ID {character_id} 및 관련 전적이 성공적으로 삭제되었습니다."}), 200
+        else:
+            return jsonify({"success": False, "message": f"캐릭터 ID {character_id}를 찾을 수 없거나 이미 삭제되었습니다."}), 404
+    except Exception as e:
+        print(f"캐릭터 삭제 중 오류 발생: {e}")
+        return jsonify({"success": False, "message": f"캐릭터 삭제 실패: {e}"}), 500
+
 
 @app.route('/analyze_character', methods=['POST'])
 def analyze_character():
@@ -416,6 +546,10 @@ def analyze_character():
 
     if not character_name or not character_description:
         return jsonify({"error": "캐릭터 이름과 설명을 모두 제공해야 합니다."}), 400
+
+    name_pattern = re.compile(r'.+\(\d+\)$') 
+    if not name_pattern.fullmatch(character_name):
+        return jsonify({"error": "캐릭터 이름은 '이름(학번)' 형식이어야 합니다. (예: 홍길동(12345))"}), 400
 
     name_profanity = check_profanity(character_name, FORBIDDEN_WORDS)
     desc_profanity = check_profanity(character_description, FORBIDDEN_WORDS)
@@ -474,7 +608,6 @@ def analyze_character():
         return jsonify({"error": f"캐릭터 분석 중 내부 오류가 발생했습니다: {e}"}), 500
 
     try:
-
         save_response = requests.post(
             f"{request.url_root.rstrip('/')}/api/save_character",
             json={
@@ -507,10 +640,10 @@ def analyze_character():
 
 
 if __name__ == '__main__':
-    scheduler.start()
-    print("자동 배틀 스케줄러가 시작되었습니다.")
-
-    atexit.register(lambda: scheduler.shutdown())
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        initialize_scheduler()
+    else:
+        print("자동 배틀 스케줄러는 서브 프로세스에서 시작되지 않습니다. (리로더 프로세스)")
 
     port = int(os.getenv("FLASK_PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
